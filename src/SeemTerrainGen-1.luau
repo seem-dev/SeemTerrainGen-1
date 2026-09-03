@@ -30,8 +30,6 @@ local SeemTerrainCache = replicated.SeemTerrain.Temp
 
 local SeemResources = script.Parent.Parent.SeemResources
 local TableLib = require(SeemResources.TableLib)
-local StringHelp = script.Parent.StringHelp
-local StringHelperModule = require(StringHelp.StringHelperModule)
 
 local cam = workspace.Camera
 
