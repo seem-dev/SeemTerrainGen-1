@@ -1,6 +1,8 @@
 # SeemTerrainGen-1
 SeemTerrainGen-1: Roblox Studio World-Nature-Generator (Voxel Terrain + Props). Open Source and MIT.
 
+**Made by Seem for devs.**
+
 ## How to Import to Studio
 1. Create a Folder
 2. Copy the "SeemTerrainGen-1" Module into the folder
