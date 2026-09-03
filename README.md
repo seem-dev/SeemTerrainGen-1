@@ -50,3 +50,9 @@ Simply call `SeemTerrainGen_1.CreateFolders()`
 Then there is going to be a folder in the SeemTerrain/Temp in workspace. This Folder stores the whole generation. 
 
 **Note:** Whenever you want to make another generation (Terrain + Props), delete everything within SeemTerrain/Temp.
+
+# Video Tutorials
+## All-In-One Tutorial
+https://youtu.be/UanoH9D9VMY
+## MaterialList Tutorial - More in Depth
+-- In development
