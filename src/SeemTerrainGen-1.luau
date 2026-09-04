@@ -925,9 +925,6 @@ function SeemTerrainGen1.GenerateProps(
 															local groundNormal = raycastResult.Normal
 															local upVector = Vector3.new(0, 1, 0)
 
-															-- idk what exactly each of these math functions do,
-															-- I understood at the time when I watched the videos, but forgot instantly,
-															-- so they are copied from videos.
 															local dot = groundNormal:Dot(upVector)
 
 															local slopeAngle = math.deg(math.acos(math.clamp(dot, -1, 1)))
