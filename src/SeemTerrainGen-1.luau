@@ -112,7 +112,7 @@ export type MaterialsList = {
 	Falloff: { 
 		Enabled: boolean,
 		Start: number, -- falloff strength(sharpness)! 0-1. this is, how long long the falloff is, not really the start
-		Strength: number, -- 0-inf(max 20 is enough)
+		Strength: number, -- 0-inf
 		Interpolation: "linear" | "smoothstep" | "KenPerlin_smoothstep", -- only smoothstep supported currently
 		CornerRadius: number?, -- relative to its own Sizes(X and Z)
 		FalloffRadius: number?, -- studs; works like CornerRadius
