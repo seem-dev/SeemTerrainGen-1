@@ -292,7 +292,7 @@ function SeemTerrainGen1.GenerateTerrain(
 			-- what would you do if your brother is so much better?
 
 			local raw = math.noise(worldX * NoiseScale, worldZ * NoiseScale, Seed)
-
+			-- fbm
 			if Octaves then
 				local lacunarity = lacunarity
 				local gain = gain
@@ -330,7 +330,7 @@ function SeemTerrainGen1.GenerateTerrain(
 
 			local worldY = (powered * Amplitude)
 
-			-- SDF. I only understand it with the docs. I forget this all the time.
+			-- SDF.
 			if Falloff and Falloff.Enabled == true then
 				local distX = math.abs(worldX - midX)
 				local distZ = math.abs(worldZ - midZ)
