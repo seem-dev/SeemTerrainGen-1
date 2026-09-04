@@ -60,4 +60,5 @@ Then there is going to be a folder in the SeemTerrain/Temp in workspace. This Fo
 ## All-In-One Tutorial
 https://youtu.be/UanoH9D9VMY
 ## MaterialList Tutorial - More in Depth
--- In development
+-- Video-Tutorial in development.
+Read the README.md in src/examples for a readable tutorial.
