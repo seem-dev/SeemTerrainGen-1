@@ -72,7 +72,7 @@ The content (value of the key) of this Layer is called a SingleLayer and stores 
 
 Adjust each property and play around. You will quickly be able to tell what each property does.
 
-## Gaining access to Positions
+## Gaining access to Deep-Data
 SeemTerrainGen-1 stores everything you need and can. Another useful value is the _Positions. 
 
 This key stores every single position that SeemTerrainGen-1 created and currently stores positions and material (an array out of tables which store position and material).
