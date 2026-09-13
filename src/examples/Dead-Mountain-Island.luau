@@ -342,8 +342,8 @@ local MaterialList: MaterialsList = {
 
 	},
 	
-	BatchingEnabled = false,
-	BatchTime = 0.1,
+	BatchingEnabled = true,
+	BatchTime = 0.02,
 	BatchWait = 0.03,
 	
 	WaitDuration = 0.03,
