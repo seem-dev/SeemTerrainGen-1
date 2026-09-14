@@ -21,563 +21,395 @@ TikTok: https://www.tiktok.com/@seem44014
 -- Type annotations are used and hopefully logical names.
 -- You will see the pattern
 
+--============================
+-- SERVICES
+--============================
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 local replicated = game:GetService("ReplicatedStorage")
 local ScriptEditorService = game:GetService("ScriptEditorService")
-local SeemTerrainTemp = workspace.SeemTerrain.Temp
-local SeemTerrainCache = replicated.SeemTerrain.Temp
 
-local TableLib = require(script.Parent.TableLib)
+--============================
+-- FOLDERS
+--============================
+local SeemResources = script.Parent.Parent.SeemResources
+local MathHelp = script.Parent.MathHelp
 
+--============================
+-- RELEVANT INSTANCES
+--============================
 local cam = workspace.Camera
-
--- types
-export type SingleLayer = { -- string = height. e.g ["-100 to 10"]
-	SameMaterialLevelNoiseScale: number?,
-	SameMaterialLevelNoiseLength: number?,
-	SameMaterialLevelNoiseSeed: number?,
-
-	InnerMaterialNoiseScale: number?,
-	InnerMaterialNoiseStrength: number?,
-	InnerMaterialNoiseSeed: number?,
-
-	List: {
-		{
-			Threshold: number,
-			Material: Enum.Material,
-
-			-- idk if this is up to date, but this should've stored all the positions and materials of the whole generation.
-			-- don't put this in folders, too much performance taken
-			_Positions: {{pos: Vector3, mat: Enum.Material}}?,
-
-			-- optional Instancing
-			Instancing: {
-				-- instance tbl
-				{
-					Threshold: number,
-
-					Instances: {
-						{
-							Threshold: number,
-							Instance: Instance,
-							MaxHeight: number,
-							MaxSlope: number, -- (deg)
-							Offset: number?,
-							FaceNormal: boolean?,
-
-							MinRandomRotations: {
-								x: number,
-								y: number,
-								z: number
-							},
-
-							MaxRandomRotations: {
-								x: number,
-								y: number,
-								z: number
-							},
-
-							MinRandomScale: number,
-							MaxRandomScale: number
-						}
-					}
-				}
-			}?
-		}
-	}
-
-}
-
-export type Layers = {
-	[string]: SingleLayer -- iIn and InnerMatList
-}
-
-export type MaterialsList = {
-
-	BallRadius: number,
-	RandomOctaveSeed: boolean,
-	Octaves: number,
-	Size: Vector3,
-	CenterPosition: Vector3,
-	Seed: number,
-
-	InstancingSteps: number,
-	InstancingSeed: number,
-
-	InstDistributionScale: number,
-	InstDistributionSeed: number,
-	InstDistributionLength: number,
-
-	Falloff: { 
-		Enabled: boolean,
-		Start: number, -- falloff strength(sharpness)! 0-1. this is, how long long the falloff is, not really the start
-		Strength: number, -- 0-inf
-		Interpolation: "linear" | "smoothstep" | "KenPerlin_smoothstep", -- only smoothstep supported currently
-		CornerRadius: number?, -- relative to its own Sizes(X and Z)
-		FalloffRadius: number?, -- studs; works like CornerRadius
-		Reversed: boolean?,
-		FallOffAxis: "X" | "Z" | "XZ"?
-	},
-	Thickness: {
-		ThicknessNumber: number,
-		Direction: "up" | "down",
-		Steps: number?,
-		Power: number?
-	},
-
-	instNoiseScale: number,
-	instNoiseLength: number, -- studs
-	instNoiseSeed: number,
-
-	WaitDuration: number,
-	Steps: number,
-
-	BatchingEnabled: boolean,
-	BatchTime: number,
-	BatchWait: number,
-
-	Amplitudes: {number},
-	NoiseScales: {number},
-	Powers: {number},
-
-	-- Octaves
-	lacunarities: {number},
-	gains: {number},
-
-	MaterialsList: {
-		{ -- biome
-			BiomeName: string,
-			Threshold: number,
-			FallbackMaterial: Enum.Material,
-			_Positions: {{pos: Vector3, mat: Enum.Material}}?,
-			Layers: Layers,
-
-			-- height material noise(blending with noise)
-			LayerNoiseScale: number?,
-			LayerNoiseLength: number?,
-
-			-- biome noise with other biomes
-			BiomNoiseLength: number?,
-			BiomNoiseScale: number?,
-		}
-	},
-
-	MaterialNoiseScale: number?,
-	MaterialNoiseStrength: number?,
-	MaterialNoiseSeed: number?
-}
-
--- minecraft is wonderful, isn't it? Was notch a good person?
--- This type is used for the function ClearProps. Read more in that function: There isn't actually chunking used, just batching.
-export type ChunkConfigType = {
-	ChunkSize: Vector3,
-	ChunkLoadingTime: number,
-	ChunkLoadingWait: number
-}
-
 local terrain = workspace.Terrain :: Terrain
 
-local MathHelp = script.Parent.MathHelp
+--============================
+-- MODULES
+--============================
+local TableLib = require("./TableLib")
 local Formulas = require(MathHelp.Formulas)
+local Types = require("./Types")
+local Processor = require("./Processor")
+local SeemTerrainGen_1_Utils = require("./SeemTerrainGen-1-Utils")
 
 local SeemTerrainGen1 = {}
 
+--============================
+-- GLOBAL VARIABLES
+--============================
 local CurrentIterationTable: {any}
-
 -- used to cancel the running operations (for e.g UI)
-SeemTerrainGen1.TerrainGenerationEnabled = true
-SeemTerrainGen1.PropGenerationEnabled = true
+Processor.TerrainGenerationEnabled = true
+Processor.PropGenerationEnabled = true
 
 function SeemTerrainGen1.GenerateTerrain(
-	Materials: MaterialsList
-)
-
+	Materials: Types.MaterialsList
+)	
+	--============================
+	-- IMPORTANT VARIABLES and FALLBACKS
+	--============================
 	local startTime = os.clock() -- for batching.
-
-	local CenterPosition = Materials.CenterPosition or Vector3.new(0, 0, 0)
-	local SizeX = Materials.Size.X
-	local SizeZ = Materials.Size.Z
-	local WaitDuration = Materials.WaitDuration or 0
-	local Steps = Materials.Steps or Materials.BallRadius
-	local Seed = Materials.Seed or 1
-	local Octaves = Materials.Octaves or 5
-	local BallRadius = Materials.BallRadius or 5
-
-	local RandomOctaveSeed = Materials.RandomOctaveSeed or false
-
-	local InstancingSteps = Materials.InstancingSteps or Materials.Steps
-	local instNoiseScale = Materials.instNoiseScale or 0.8
-	local instNoiseLength = Materials.instNoiseLength or 15 -- studs
-	local instNoiseSeed = Materials.instNoiseSeed or 1
-
-	local BatchingEnabled = Materials.BatchingEnabled or true
-	local BatchTime = Materials.BatchTime or 0.02
-	local BatchWait = Materials.BatchWait or 0.03
-
-	local Falloff = Materials.Falloff
-	local Thickness = Materials.Thickness
-
-	local halfX, halfZ = SizeX / 2, SizeZ / 2
-	local midX = CenterPosition.X + halfX
-	local midZ = CenterPosition.Z + halfZ
-
+	
+	local FinalizedValues = SeemTerrainGen_1_Utils.GetFinalizedValues(Materials) -- gets the finalized values (fallback-checks, etc.)
+	
+	--============================
+	-- SETUP SeemTerrainGen_1_Utils WITH FINALIZED-VALUES
+	--============================
+	SeemTerrainGen_1_Utils.Setup_STG_1_Utils(FinalizedValues)
+	
+	--============================
+	-- IMPORTANT VARIABLES
+	--============================
+	local halfX, halfZ = FinalizedValues.Size.X / 2, FinalizedValues.Size.Z / 2
+	local midX = FinalizedValues.CenterPosition.X + halfX
+	local midZ = FinalizedValues.CenterPosition.Z + halfZ
+	
 	-- everything is stored in this table. Just look it up(ctrl + F)
 	local IterationTable: {[any]: any} = {}
 
 	local MaterialNoise = 0
-
-	for xi = 0, SizeX, Steps do
-		-- Cancel Handling
-		if SeemTerrainGen1.TerrainGenerationEnabled == false then
+	
+	for xi = 0, FinalizedValues.Size.X, FinalizedValues.Steps do
+		
+		--============================
+		-- HANDLE PROCESSOR (CANCEL OR NOT)
+		--============================
+		if not Processor.CheckTerrainGenerationEnabled() then
 			break
 		end
-		--
-		local worldX = xi + CenterPosition.X
-
-		for zi = 0, SizeZ, Steps do
-			-- Cancel Handling
-			if SeemTerrainGen1.TerrainGenerationEnabled == false then
+		
+		--============================
+		-- CREATE WORLDX
+		--============================
+		local worldX = xi + FinalizedValues.CenterPosition.X
+		
+		for zi = 0, FinalizedValues.Size.Z, FinalizedValues.Steps do
+			
+			--============================
+			-- HANDLE PROCESSOR (CANCEL OR NOT)
+			--============================
+			if not Processor.CheckTerrainGenerationEnabled() then
 				break
 			end
-			--
-			local worldZ = zi + CenterPosition.Z
+			
+			--============================
+			-- CREATE WORLDZ
+			--============================
+			local worldZ = zi + FinalizedValues.CenterPosition.Z
 
-			local MaterialNoiseScale = Materials.MaterialNoiseScale or 0.001
-			local MaterialNoiseSeed = Materials.MaterialNoiseSeed or 100
-			local MaterialNoiseStrength = Materials.MaterialNoiseStrength or 1
-			MaterialNoise = math.noise(
-				worldX * MaterialNoiseScale,
-				worldZ * MaterialNoiseScale,
-				Seed + MaterialNoiseSeed
-			) * MaterialNoiseStrength
-			MaterialNoise = MaterialNoise + (0.5 * MaterialNoiseStrength)
-			MaterialNoise = math.clamp(MaterialNoise, 0, 1)
+			--============================
+			-- GET MATERIALNOISE
+			--============================
+			MaterialNoise = SeemTerrainGen_1_Utils.GetMaterialNoise(worldX, worldZ)
 
-			-- NoiseScale
-			local NoiseScale = Formulas.GetSplineValue(
-				Materials.NoiseScales,
+			--============================
+			-- GET (FINALIZED-)DYNAMIC VALUES
+			--============================
+			local FinalizedDynamicValues = SeemTerrainGen_1_Utils.GetFinalizedDynamicValues(
+				Materials,
 				MaterialNoise
 			)
-			NoiseScale = math.clamp(NoiseScale, Formulas.GetSmallestNumInArray(Materials.NoiseScales), 10000000)
-
-			-- Amplitude
-			local Amplitude = Formulas.GetSplineValue(
-				Materials.Amplitudes,
-				MaterialNoise
+			
+			--============================
+			-- GET FINAL MATERIALLIST
+			--============================
+			local FinalMaterialList = SeemTerrainGen_1_Utils.GetFinalMaterialList(
+				FinalizedValues,
+				FinalizedDynamicValues
 			)
-			Amplitude = math.clamp(Amplitude, Formulas.GetSmallestNumInArray(Materials.Amplitudes), 10000000000000)
-
-			-- Power
-			local Power = Formulas.GetSplineValue(
-				Materials.Powers,
-				MaterialNoise
-			)
-			Power = math.clamp(Power, Formulas.GetSmallestNumInArray(Materials.Powers), 10000000000000)
-
-			-- lacunarity
-			local lacunarity = Formulas.GetSplineValue(
-				Materials.lacunarities,
-				MaterialNoise
-			)
-			lacunarity = math.clamp(lacunarity, Formulas.GetSmallestNumInArray(Materials.lacunarities), 50000)
-
-			-- gain
-			local gain = Formulas.GetSplineValue(
-				Materials.gains,
-				MaterialNoise
-			)
-			gain = math.clamp(gain, Formulas.GetSmallestNumInArray(Materials.gains), 50000)
-
+			
 			-- what would you do if your brother is so much better?
+			
+			--============================
+			-- DEFINE THE FIRST NOISE (that's why I call it "raw")
+			--============================
+			local raw = math.noise(worldX * FinalizedDynamicValues.NoiseScale, worldZ * FinalizedDynamicValues.NoiseScale, FinalizedValues.Seed)
 
-			local raw = math.noise(worldX * NoiseScale, worldZ * NoiseScale, Seed)
-			-- fbm
-			if Octaves then
-				local lacunarity = lacunarity
-				local gain = gain
+			--============================
+			-- FBM (fractal brownian motion)
+			--============================
+			if FinalizedValues.Octaves then
+				raw = SeemTerrainGen_1_Utils.GetFBM(
+					FinalizedDynamicValues,
+					FinalizedValues,
+					worldX,
+					worldZ
+				)
+			end
+			
+			--============================
+			-- FINALIZE RAW-NOISE (OFFSET, etc.)
+			--============================
+			raw = raw + 0.5 -- offset so we stay in 0-1 range instead of -0.5 to 0.5
+			raw = math.clamp(raw, 0, 1) -- safe clamp (noise can have spikes)
+			
+			--============================
+			-- CREATE & APPLY POWER (EXPONENTIAL CURVE)
+			--============================
+			local powered = math.pow(raw, FinalizedDynamicValues.Power) -- exponential curve for flattened areas; like a push-controller
+			local worldY = (powered * FinalizedDynamicValues.Amplitude) -- actually apply to Amplitude so we are not in 0-1 range anymore
 
-				local AllNoises = 0
-				local AllMultiplicators = 0
-
-				-- initial values
-				local currentFrequency = NoiseScale
-				local currentAmplitude = 1
-
-				for i = 1, Octaves or 1 do
-
-					if RandomOctaveSeed then
-						AllNoises += currentAmplitude * math.noise(worldX * currentFrequency, worldZ * currentFrequency, Seed + i)
-					else
-						AllNoises += currentAmplitude * math.noise(worldX * currentFrequency, worldZ * currentFrequency, Seed)
-					end
-
-					AllMultiplicators += currentAmplitude
-
-					currentFrequency *= lacunarity
-					currentAmplitude *= gain
-				end
-
-				raw = AllNoises / AllMultiplicators
-			else 
-				raw = math.noise(worldX * NoiseScale, worldZ * NoiseScale, Seed)
+			--============================
+			-- SDF (signed distance function)
+			--============================
+			if FinalizedValues.Falloff and FinalizedValues.Falloff.Enabled == true then
+				worldY = SeemTerrainGen_1_Utils.GetSDF(
+					FinalizedValues,
+					worldX, worldY, worldZ,
+					midX, midZ,
+					halfX, halfZ
+				)
 			end
 
-			raw = raw + 0.5
-			raw = math.clamp(raw, 0, 1)
-
-			local powered = math.pow(raw, Power)
-
-			local worldY = (powered * Amplitude)
-
-			-- SDF.
-			if Falloff and Falloff.Enabled == true then
-				local distX = math.abs(worldX - midX)
-				local distZ = math.abs(worldZ - midZ)
-
-				local cRadius = Falloff.CornerRadius or 0
-				if Falloff.FalloffRadius ~= nil and Falloff.FalloffRadius > 0 then
-					cRadius = Falloff.FalloffRadius
-				end
-
-				local innerSizeX = halfX - cRadius
-				local innerSizeZ = halfZ - cRadius
-
-				local overX = math.max(0, distX - innerSizeX)
-				local overZ = math.max(0, distZ - innerSizeZ)
-
-				local distToCorner
-
-				if Falloff.FalloffRadius ~= nil and Falloff.FalloffRadius > 0 then
-					distToCorner = math.max(overX, overZ)
-				else
-					distToCorner = math.sqrt(overX^2 + overZ^2)
-				end
-
-				local alpha = 0
-
-				if distToCorner > 0 then
-					alpha = math.clamp(distToCorner / cRadius, 0, 1)
-				end
-
-				if alpha < Falloff.Start then
-					alpha = 0
-				else
-					alpha = (alpha - Falloff.Start) / (1 - Falloff.Start)
-				end
-
-				-- Interpolation & Strength
-				if Falloff.Interpolation == "smoothstep" then
-					alpha = Formulas.SmoothStep(0, 1, alpha)
-				end
-
-				local FinalAlpha = alpha * Falloff.Strength
-
-				if Falloff.Reversed == true then
-					worldY = worldY * (1 + FinalAlpha)
-				else 
-					worldY = worldY * (1 - FinalAlpha)
-				end
-			end
-
-			local NewPosition = Vector3.new(worldX, worldY + CenterPosition.Y, worldZ)
-
-			local PreservedMaterial: Enum.Material = Enum.Material.Water
-
-			-- can be 0 too. I picked -100(a really low value) because I think it's correct.
-			-- noise and splines have spikes, so I just chose a "right" value.
-			local LastThreshold = -100
-
-			local currentThreshold
+			--============================
+			-- DEFINE POSITION AND TOP FALLOFF MATERIAL
+			--============================
+			local NewPosition = Vector3.new(worldX, worldY + FinalizedValues.CenterPosition.Y, worldZ)
+			local PreservedMaterial = Enum.Material.Water
+			
+			--============================
+			-- DEFINE THRESHOLDS (LAST AND CURRENT)
+			--============================
+			local LastThreshold = 0
+			local currentThreshold = 0
+			
+			--============================
+			-- FIND BIOME (LOOP THROUGH BIOME)
+			--============================
 			for i, Biome in ipairs(Materials.MaterialsList) do
-
-				local function CreateDataBiomeFolder()
-					if not IterationTable[Biome.BiomeName] then
-						IterationTable[Biome.BiomeName] = {}
-					end
-
-					return IterationTable[Biome.BiomeName]
-				end
-				local CurrentBiomeTable = CreateDataBiomeFolder()
+				
+				--============================
+				-- CREATE BIOME FOLDER
+				--============================
+				local CurrentBiomeTable = SeemTerrainGen_1_Utils.CreateDataBiomeFolder(IterationTable, Biome)
+				
 				-- ..  .... .- - .  -.-. .- -. -.-. . .-. .-.-.-
+				
+				--============================
+				-- HANDLE CURRENT-THRESHOLD (FOR SPIKES)
+				--============================
 				currentThreshold = Biome.Threshold
-
 				if i == #Materials.MaterialsList then
-					currentThreshold = 100
+					currentThreshold = 100 -- for spikes when we are in the last threshold
 				end
 
-				local BiomNoiseScale = Biome.BiomNoiseScale or 0
-				local BiomNoiseLength = Biome.BiomNoiseLength or 0
-				local StrengthNoise = math.noise(worldX * BiomNoiseScale, worldZ * BiomNoiseScale, Seed) * BiomNoiseLength
-				local Threshold = currentThreshold + StrengthNoise + (0.5 * BiomNoiseLength)
-
-
-				if MaterialNoise <= Threshold and MaterialNoise >= LastThreshold then
+				--============================
+				-- GET FINALIZED-BIOME-VALUES
+				--============================
+				local FinalizedBiomeValues = SeemTerrainGen_1_Utils.GetFinalizedBiomeValues(
+					Biome,
+					FinalizedValues,
+					worldX, worldZ,
+					currentThreshold
+				)
+				
+				--============================
+				-- CHECK IF WE ARE IN THE RIGHT BIOME
+				--============================
+				if MaterialNoise <= FinalizedBiomeValues.Threshold and MaterialNoise >= LastThreshold then
 					-- we have found the correct biome
-
+					
+					--============================
+					-- SET THE BIOME-FALLBACKMATERIAL
+					--============================
 					PreservedMaterial = Biome.FallbackMaterial
+					
+					--============================
+					-- FIND RANGE(LAYER) (LOOP THROUGH BIOME-LAYERS)
+					--============================
+					for Range: string, MatList: Types.SingleLayer in pairs(Biome.Layers) do
+	
+						local CurrentRangeTable = SeemTerrainGen_1_Utils.CreateDataRangeFolder(IterationTable, CurrentBiomeTable, Range)
 
-					local fym = true -- I raged when doing this: I debugged and no variable names were coming into my head, so I just picked fym. No effect at all.
-					for Range: string, MatList: SingleLayer in pairs(Biome.Layers) do
-						if fym == false then return end
-
-						for _, CurrentMatList in ipairs(MatList.List) do
-							local function CreateDataRangeFolder()
-								if not CurrentBiomeTable[Range] then
-									CurrentBiomeTable[Range] = {}
-								end
-
-								return CurrentBiomeTable[Range]
-							end
-							local CurrentRangeTable = CreateDataRangeFolder()
-
-							local StartNum = Range:match("^[%p%d]+")
-							local EndNum = Range:match("[%p%d]+$")
-
-							StartNum = tonumber(StartNum) :: number
-							EndNum = tonumber(EndNum) :: number
-
-							local LayerNoiseScale = Biome.LayerNoiseScale or 0.08
-							local LayerNoiseLength = Biome.LayerNoiseLength or 30
-							local LayerNoiseStrength = math.noise(worldX * LayerNoiseScale, worldZ * LayerNoiseScale, Seed) * LayerNoiseLength
-							local checkY = NewPosition.Y + LayerNoiseStrength + (0.5 * LayerNoiseLength) --+ (InnerMaterialsStrength * InnerMaterialsScale)
-
-							if checkY >= StartNum and checkY <= EndNum then
+						--============================
+						-- DEFINE START- AND END-NUM
+						--============================
+						local StartNumStr = Range:match("^[%p%d]+")
+						local EndNumStr = Range:match("[%p%d]+$")
+						local StartNum = tonumber(StartNumStr)
+						local EndNum = tonumber(EndNumStr)
+						
+						if not StartNum or not EndNum then continue end
+						
+						--============================
+						-- FIND RANGE(LAYER) (LOOP THROUGH RANGE)
+						--============================
+						for iIn, InnerMatList in ipairs(MatList.List) do
+	
+							local FinalizedLayerValues = SeemTerrainGen_1_Utils.GetFinalizedLayerValues(
+								Biome,
+								FinalizedValues,
+								worldX, worldZ,
+								NewPosition
+							)
+							
+							--============================
+							-- CHECK IF WE ARE IN THE CORRECT(ALLOWED) LAYER (HEIGHT)
+							--============================
+							if FinalizedLayerValues.checkY >= StartNum and FinalizedLayerValues.checkY <= EndNum then
 								-- we have found the correct layer(height material layer)
-								--
-								local InnerMaterialNoiseScale = MatList.InnerMaterialNoiseScale or 0.1
-								local InnerMaterialNoiseSeed = MatList.InnerMaterialNoiseSeed or 123
-								local InnerMaterialNoiseStrength = MatList.InnerMaterialNoiseStrength or 1
-								local InnerMaterialNoise = math.noise(worldX * InnerMaterialNoiseScale, worldZ * InnerMaterialNoiseScale, Seed + InnerMaterialNoiseSeed) * InnerMaterialNoiseStrength
-
-								InnerMaterialNoise = InnerMaterialNoise + (0.5 * InnerMaterialNoiseStrength)
-
-								InnerMaterialNoise = math.clamp(InnerMaterialNoise, 0, 1)
-
+								
+								--============================
+								-- GET FINALIZED-INNER-MATERIAL-VALUES
+								--============================
+								local FinalizedInnerMaterialValues = SeemTerrainGen_1_Utils.GetFinalizedInnerMaterialValues(
+									MatList,
+									FinalizedValues,
+									worldX, worldZ
+								)
+								
 								-- it's so strange being the different one, even when you have no idea.
 								-- a person always needing to watch you because you are "different".
-
+								
+								--============================
+								-- DEFINE THRESHOLDS (LAST & CURRENT)
+								--============================
 								local LastInnerThreshold = 0
 								local CurrentInnerThreshold
-								local InstDistance = 0
+								
+								--============================
+								-- GET FINALIZED SAME-MATERIAL-LEVEL-VALUES
+								--============================
+								local FinalizedSameMaterialLevelValues = SeemTerrainGen_1_Utils.GetFinalizedSameMaterialLevelValues(
+									MatList,
+									FinalizedValues,
+									worldX, worldZ
+								)
 
-								for iIn, InnerMatList in ipairs(MatList.List) do
+								--============================
+								-- HANDLE CURRENT-INNER-THRESHOLD (FOR SPIKES)
+								--============================
+								CurrentInnerThreshold = InnerMatList.Threshold + (0.5 * FinalizedSameMaterialLevelValues.SameMaterialLevelNoiseStrength)
+								if iIn == #MatList.List then
+									CurrentInnerThreshold = 100 
+								end
+								
+								--============================
+								-- CHECK IF WE ARE IN THE CORRECT INNER-MATERIAL (-AREA/NOISE)
+								--============================
+								if FinalizedInnerMaterialValues.InnerMaterialNoise <= CurrentInnerThreshold and FinalizedInnerMaterialValues.InnerMaterialNoise >= LastInnerThreshold then
+									-- we have found the correct inner-material (-area/noise)
+									
+									--============================
+									-- CHECK IF WE ARE IN THE RIGHT INNER-MATERIAL (-AREA/NOISE)
+									--============================
+									PreservedMaterial = InnerMatList.Material
 
-									local SameMaterialLevelNoiseScale = MatList.SameMaterialLevelNoiseScale or 0.8
-									local SameMaterialLevelNoiseLength = MatList.SameMaterialLevelNoiseLength or 1
-									local SameMaterialLevelNoiseSeed = MatList.SameMaterialLevelNoiseSeed or 2132
-
-									local SameMaterialLevelNoiseStrength = math.noise(worldX * SameMaterialLevelNoiseScale, worldZ * SameMaterialLevelNoiseScale, Seed + SameMaterialLevelNoiseSeed) * SameMaterialLevelNoiseLength
-
-									CurrentInnerThreshold = InnerMatList.Threshold + (0.5 * SameMaterialLevelNoiseStrength)
-
-									if iIn == #MatList.List then
-										CurrentInnerThreshold = 100 
+									--============================
+									-- DEFINE DEEP-DATA
+									--============================
+									if not InnerMatList._Positions then
+										InnerMatList._Positions = {{pos = NewPosition, mat = InnerMatList.Material}}
+									else 
+										table.insert(InnerMatList._Positions :: {{ mat: Enum.Material, pos: Vector3 }}, {pos = NewPosition, mat = InnerMatList.Material})
 									end
 
-									--
-									-- same height level check
-									if InnerMaterialNoise <= CurrentInnerThreshold and InnerMaterialNoise >= LastInnerThreshold then
-										-- we have found the correct InnerMaterial
-										PreservedMaterial = InnerMatList.Material
+									--============================
+									-- CREATE DATA-MATERIAL-FOLDER
+									--============================
+									local CurrentMaterialFolder = SeemTerrainGen_1_Utils.CreateDataMaterialFolder(
+										CurrentRangeTable,
+										PreservedMaterial
+									)
 
-										if not InnerMatList._Positions then
-											InnerMatList._Positions = {{pos = NewPosition, mat = InnerMatList.Material}}
-										else 
-											table.insert(InnerMatList._Positions :: {{ mat: Enum.Material, pos: Vector3 }}, {pos = NewPosition, mat = InnerMatList.Material})
-										end
+									break
+								end	
 
-										local function CreateDataMaterialFolder()
-											if not CurrentRangeTable[tostring(PreservedMaterial)] then
-												CurrentRangeTable[tostring(PreservedMaterial)] = {}
-											end
-
-											return CurrentRangeTable[tostring(PreservedMaterial)]
-										end
-										local CurrentMaterialFolder = CreateDataMaterialFolder()
-
-										local function CreateDataPositionFolder()
-											if not CurrentMaterialFolder[tostring(NewPosition)] then
-												CurrentMaterialFolder[tostring(NewPosition)] = {}
-											end
-
-											return CurrentMaterialFolder[tostring(NewPosition)]
-										end
-
-										break
-									else 
-
-									end	
-
-									LastInnerThreshold = CurrentInnerThreshold
-								end
-
-								break
-							else 
-								--print("not checky")
+								--============================
+								-- UPDATE LAST-INNTER-THRESHOLD
+								--============================
+								LastInnerThreshold = CurrentInnerThreshold
 							end
 						end
-
+						
 					end
-
+					
+					--============================
+					-- BREAK TO SAVE PERFORMANCE (No unnecessary loops)
+					--============================
 					break
 				end
-
-				LastThreshold = Threshold
+				
+				--============================
+				-- UPDATE LAST-THRESHOLD
+				--============================
+				LastThreshold = FinalizedBiomeValues.Threshold
 			end
 
-			terrain:FillBall(NewPosition, BallRadius, PreservedMaterial)
+			terrain:FillBall(NewPosition, FinalizedValues.BallRadius, PreservedMaterial)
 
-			-- Depth(Y)
-			if Thickness ~= nil then
-				local ThicknessSteps = Thickness.Steps or 1
-				local ThicknessPower = Thickness.Power or 1
-
-				for i = 1, Thickness.ThicknessNumber, ThicknessSteps do
-					local ThicknessPosition: Vector3
-
-					if Thickness.Direction == "up" then
-						ThicknessPosition = NewPosition + Vector3.new(0, i * ThicknessPower, 0)
-					elseif Thickness.Direction == "down" then
-						ThicknessPosition = NewPosition + Vector3.new(0, -i * ThicknessPower, 0)
-					end
-
-					terrain:FillBall(ThicknessPosition, BallRadius, PreservedMaterial)
-				end
+			--============================
+			-- ADD THICKNESS IF DESIRED
+			--============================
+			if FinalizedValues.Thickness ~= nil then
+				SeemTerrainGen_1_Utils.AddThickness(
+					FinalizedValues,
+					NewPosition,
+					PreservedMaterial
+				)
 			end
-
-			if BatchingEnabled then
-				if (os.clock() - startTime) >= BatchTime then
-					task.wait(BatchWait)
+		
+			--============================
+			-- HANDLE BATCHING
+			--============================
+			if FinalizedValues.BatchingEnabled then
+				if (os.clock() - startTime) >= FinalizedValues.BatchTime then
+					task.wait(FinalizedValues.BatchWait)
 
 					startTime = os.clock()
 				end
 			end
 		end
-
-		if BatchingEnabled then
-			task.wait(WaitDuration)
+		
+		--============================
+		-- HANDLE BATCHING
+		--============================
+		if FinalizedValues.BatchingEnabled then
+			task.wait(FinalizedValues.WaitDuration)
 		end
 	end
-
+	
 	CurrentIterationTable = IterationTable
-
-	SeemTerrainGen1.TerrainGenerationEnabled = true -- automatically enable(so we dont need another function to resume generation)
-end
-
-function SeemTerrainGen1.CancelTerrainGeneration()
-	SeemTerrainGen1.TerrainGenerationEnabled = false
-end
-
-function SeemTerrainGen1.CancelPropGeneration()
-	SeemTerrainGen1.PropGenerationEnabled = false
+	
+	--============================
+	-- "RESET" PROCESSOR TO TRUE
+	--============================
+	Processor.EnableTerrainGeneration() -- automatically enable(so we dont need another function to resume generation)
 end
 
 -- LoadProps
 function SeemTerrainGen1.CreateFolders()
+	local SeemTerrainTemp = workspace.SeemTerrain.Temp -- get the latest always
+	
+	local function RefreshTempFolder()
+		for i, v in pairs(SeemTerrainTemp:GetChildren()) do
+			v:Destroy()
+		end
+	end
+	
+	RefreshTempFolder()
+	
 	if typeof(CurrentIterationTable) == "table" then
 		TableLib.ConvertToFolders(CurrentIterationTable, SeemTerrainTemp, 0.02)
-
+		
 		-- delete unnecessary folders
 		for i,v in pairs(SeemTerrainTemp:GetDescendants()) do
 			if v.Name == "Instances" then -- folder
@@ -588,490 +420,461 @@ function SeemTerrainGen1.CreateFolders()
 				end
 			end
 		end
-
-		warn("Delete unnecessary folders")
+		
+		warn("Successfully loaded Props.")
 	end
 end
 
 function SeemTerrainGen1.GenerateProps(
-	Materials: MaterialsList
+	Materials: Types.MaterialsList
 )
+	
+	--============================
+	-- IMPORTANT VARIABLES and FALLBACKS
+	--============================
+	local startTime = os.clock() -- for batching.
+	local LastInstPosition: Vector3 -- for Instance
 
-	-- "You are in your brother's shadow"
+	local FinalizedValues = SeemTerrainGen_1_Utils.GetFinalizedValues(Materials) -- gets the finalized values (fallback-checks, etc.)
 
-	--GenerateProps follows the same structure and pattern as GenerateTerrain;
-	-- it was just easier for me to do and it didn't cause me any lack of performance.
-	local startTime = os.clock()
+	--============================
+	-- SETUP SeemTerrainGen_1_Utils WITH FINALIZED-VALUES
+	--============================
+	SeemTerrainGen_1_Utils.Setup_STG_1_Utils(FinalizedValues)
 
-	local CenterPosition = Materials.CenterPosition or Vector3.new(0, 0, 0)
-	local SizeX = Materials.Size.X
-	local SizeZ = Materials.Size.Z
-	local WaitDuration = Materials.WaitDuration or 0
-	local Steps = Materials.Steps or Materials.BallRadius
-	local Seed = Materials.Seed or 1
-	local Octaves = Materials.Octaves or 5
-	local BallRadius = Materials.BallRadius or 5
+	--============================
+	-- IMPORTANT VARIABLES
+	--============================
+	local halfX, halfZ = FinalizedValues.Size.X / 2, FinalizedValues.Size.Z / 2
+	local midX = FinalizedValues.CenterPosition.X + halfX
+	local midZ = FinalizedValues.CenterPosition.Z + halfZ
 
-	local RandomOctaveSeed = Materials.RandomOctaveSeed or false
+	local MaterialNoise = 0
 
-	local InstancingSteps = Materials.InstancingSteps or Materials.Steps
-	local InstancingSeed = Materials.InstancingSeed or 2342
+	for xi = 0, FinalizedValues.Size.X, FinalizedValues.InstancingSteps do
 
-	local InstDistributionScale = Materials.InstDistributionScale or 0.8
-	local InstDistributionSeed = Materials.InstDistributionSeed or 2043
-	local InstDistributionLength = Materials.InstDistributionLength or 1
-
-	local instNoiseScale = Materials.instNoiseScale or 0.8
-	local instNoiseLength = Materials.instNoiseLength or 15 -- studs
-	local instNoiseSeed = Materials.instNoiseSeed or 1
-
-	local BatchingEnabled = Materials.BatchingEnabled or true
-	local BatchTime = Materials.BatchTime or 0.02
-	local BatchWait = Materials.BatchWait or 0.03
-
-	local Falloff = Materials.Falloff
-	local Thickness = Materials.Thickness
-
-	local halfX, halfZ = SizeX / 2, SizeZ / 2
-	local midX = CenterPosition.X + halfX
-	local midZ = CenterPosition.Z + halfZ
-
-	-- Instancing
-	local LastInstPosition: Vector3
-	for xi = 0, SizeX, InstancingSteps do
-		-- Cancel Handling
-		if SeemTerrainGen1.PropGenerationEnabled == false then
+		--============================
+		-- HANDLE PROCESSOR (CANCEL OR NOT)
+		--============================
+		if not Processor.CheckPropGenerationEnabled() then
 			break
 		end
-		--
-		local worldX = xi + CenterPosition.X
 
-		for zi = 0, SizeZ, InstancingSteps do
-			-- Cancel Handling
-			if SeemTerrainGen1.PropGenerationEnabled == false then
+		--============================
+		-- CREATE WORLDX
+		--============================
+		local worldX = xi + FinalizedValues.CenterPosition.X
+
+		for zi = 0, FinalizedValues.Size.Z, FinalizedValues.InstancingSteps do
+
+			--============================
+			-- HANDLE PROCESSOR (CANCEL OR NOT)
+			--============================
+			if not Processor.CheckPropGenerationEnabled() then
 				break
 			end
-			--
-			local worldZ = zi + CenterPosition.Z
 
-			-- would you choose to die peacefully right now as a kid(< 10 years) or continue to live?
-			-- I mean do you remember that much as a kid as you do now?
+			--============================
+			-- CREATE WORLDZ
+			--============================
+			local worldZ = zi + FinalizedValues.CenterPosition.Z
 
-			local MaterialNoiseScale = Materials.MaterialNoiseScale or 0.001
-			local MaterialNoiseSeed = Materials.MaterialNoiseSeed or 100
-			local MaterialNoiseStrength = Materials.MaterialNoiseStrength or 1
-			local MaterialNoise = math.noise(
-				worldX * MaterialNoiseScale,
-				worldZ * MaterialNoiseScale,
-				Seed + MaterialNoiseSeed
-			) * MaterialNoiseStrength
-			MaterialNoise = MaterialNoise + (0.5 * MaterialNoiseStrength)
-			MaterialNoise = math.clamp(MaterialNoise, 0, 1)
+			--============================
+			-- GET MATERIALNOISE
+			--============================
+			MaterialNoise = SeemTerrainGen_1_Utils.GetMaterialNoise(worldX, worldZ)
 
-			-- NoiseScale
-			local NoiseScale = Formulas.GetSplineValue(
-				Materials.NoiseScales,
+			--============================
+			-- GET (FINALIZED-)DYNAMIC VALUES
+			--============================
+			local FinalizedDynamicValues = SeemTerrainGen_1_Utils.GetFinalizedDynamicValues(
+				Materials,
 				MaterialNoise
 			)
-			NoiseScale = math.clamp(NoiseScale, Formulas.GetSmallestNumInArray(Materials.NoiseScales), 10000000)
 
-			-- Amplitude
-			local Amplitude = Formulas.GetSplineValue(
-				Materials.Amplitudes,
-				MaterialNoise
+			--============================
+			-- GET FINAL MATERIALLIST
+			--============================
+			local FinalMaterialList = SeemTerrainGen_1_Utils.GetFinalMaterialList(
+				FinalizedValues,
+				FinalizedDynamicValues
 			)
-			Amplitude = math.clamp(Amplitude, Formulas.GetSmallestNumInArray(Materials.Amplitudes), 10000000000000)
 
-			-- Power
-			local Power = Formulas.GetSplineValue(
-				Materials.Powers,
-				MaterialNoise
-			)
-			Power = math.clamp(Power, Formulas.GetSmallestNumInArray(Materials.Powers), 10000000000000)
+			-- what would you do if your brother is so much better?
 
-			-- lacunarity
-			local lacunarity = Formulas.GetSplineValue(
-				Materials.lacunarities,
-				MaterialNoise
-			)
-			lacunarity = math.clamp(lacunarity, Formulas.GetSmallestNumInArray(Materials.lacunarities), 50000)
+			--============================
+			-- DEFINE THE FIRST NOISE (that's why I call it "raw")
+			--============================
+			local raw = math.noise(worldX * FinalizedDynamicValues.NoiseScale, worldZ * FinalizedDynamicValues.NoiseScale, FinalizedValues.Seed)
 
-			-- gain
-			local gain = Formulas.GetSplineValue(
-				Materials.gains,
-				MaterialNoise
-			)
-			gain = math.clamp(gain, Formulas.GetSmallestNumInArray(Materials.gains), 50000)
-
-			local raw = math.noise(worldX * NoiseScale, worldZ * NoiseScale, Seed)
-
-			-- fbm
-			if Octaves then
-				local lacunarity = lacunarity
-				local gain = gain
-
-				local AllNoises = 0
-				local AllMultiplicators = 0
-
-				-- initial values
-				local currentFrequency = NoiseScale
-				local currentAmplitude = 1
-
-				for i = 1, Octaves or 1 do
-
-					if RandomOctaveSeed then
-						AllNoises += currentAmplitude * math.noise(worldX * currentFrequency, worldZ * currentFrequency, Seed + i)
-					else
-						AllNoises += currentAmplitude * math.noise(worldX * currentFrequency, worldZ * currentFrequency, Seed)
-					end
-
-					AllMultiplicators += currentAmplitude
-
-					currentFrequency *= lacunarity
-					currentAmplitude *= gain
-				end
-
-				raw = AllNoises / AllMultiplicators
-			else 
-				raw = math.noise(worldX * NoiseScale, worldZ * NoiseScale, Seed)
+			--============================
+			-- FBM (fractal brownian motion)
+			--============================
+			if FinalizedValues.Octaves then
+				raw = SeemTerrainGen_1_Utils.GetFBM(
+					FinalizedDynamicValues,
+					FinalizedValues,
+					worldX,
+					worldZ
+				)
 			end
 
-			raw = raw + 0.5
-			raw = math.clamp(raw, 0, 1)
+			--============================
+			-- FINALIZE RAW-NOISE (OFFSET, etc.)
+			--============================
+			raw = raw + 0.5 -- offset so we stay in 0-1 range instead of -0.5 to 0.5
+			raw = math.clamp(raw, 0, 1) -- safe clamp (noise can have spikes)
 
-			-- a bit like success.
-			local powered = math.pow(raw, Power)
-			local worldY = (powered * Amplitude)
+			--============================
+			-- CREATE & APPLY POWER (EXPONENTIAL CURVE)
+			--============================
+			local powered = math.pow(raw, FinalizedDynamicValues.Power) -- exponential curve for flattened areas; like a push-controller
+			local worldY = (powered * FinalizedDynamicValues.Amplitude) -- actually apply to Amplitude so we are not in 0-1 range anymore
 
-			local BeforeFalloffY = worldY
-
-			if Falloff and Falloff.Enabled == true then
-				local distX = math.abs(worldX - midX)
-				local distZ = math.abs(worldZ - midZ)
-
-				local cRadius = Falloff.CornerRadius or 0
-				if Falloff.FalloffRadius ~= nil and Falloff.FalloffRadius > 0 then
-					cRadius = Falloff.FalloffRadius
-				end
-
-				local innerSizeX = halfX - cRadius
-				local innerSizeZ = halfZ - cRadius
-
-				local overX = math.max(0, distX - innerSizeX)
-				local overZ = math.max(0, distZ - innerSizeZ)
-
-				local distToCorner
-
-				if Falloff.FalloffRadius ~= nil and Falloff.FalloffRadius > 0 then
-					distToCorner = math.max(overX, overZ)
-				else
-					distToCorner = math.sqrt(overX^2 + overZ^2)
-				end
-
-				local alpha = 0
-
-				if distToCorner > 0 then
-					alpha = math.clamp(distToCorner / cRadius, 0, 1)
-				end
-
-				if alpha < Falloff.Start then
-					alpha = 0
-				else
-					alpha = (alpha - Falloff.Start) / (1 - Falloff.Start)
-				end
-
-				if Falloff.Interpolation == "smoothstep" then
-					alpha = Formulas.SmoothStep(0, 1, alpha)
-				end
-
-				local FinalAlpha = alpha * Falloff.Strength
-
-				if Falloff.Reversed == true then
-					worldY = worldY * (1 + FinalAlpha)
-				else 
-					worldY = worldY * (1 - FinalAlpha)
-				end
+			--============================
+			-- SDF (signed distance function)
+			--============================
+			if FinalizedValues.Falloff and FinalizedValues.Falloff.Enabled == true then
+				worldY = SeemTerrainGen_1_Utils.GetSDF(
+					FinalizedValues,
+					worldX, worldY, worldZ,
+					midX, midZ,
+					halfX, halfZ
+				)
 			end
 
-			local NewPosition = Vector3.new(worldX, worldY + CenterPosition.Y, worldZ)
+			--============================
+			-- DEFINE POSITION AND TOP FALLOFF MATERIAL
+			--============================
+			local NewPosition = Vector3.new(worldX, worldY + FinalizedValues.CenterPosition.Y, worldZ)
+			local PreservedMaterial = Enum.Material.Water
 
-			local PreservedMaterial: Enum.Material = Enum.Material.Water
-
+			--============================
+			-- DEFINE THRESHOLDS (LAST AND CURRENT)
+			--============================
 			local LastThreshold = 0
-			local currentThreshold
+			local currentThreshold = 0
+
+			--============================
+			-- FIND BIOME (LOOP THROUGH BIOME)
+			--============================
 			for i, Biome in ipairs(Materials.MaterialsList) do
+				-- ..  .... .- - .  -.-. .- -. -.-. . .-. .-.-.-
 
-				-- Instancing
-				--
+				--============================
+				-- HANDLE CURRENT-THRESHOLD (FOR SPIKES)
+				--============================
 				currentThreshold = Biome.Threshold
-
 				if i == #Materials.MaterialsList then
-					currentThreshold = 100 
+					currentThreshold = 100 -- for spikes when we are in the last threshold
 				end
 
-				local BiomNoiseScale = Biome.BiomNoiseScale or 0.1
-				local BiomNoiseLength = Biome.BiomNoiseLength or 0.1
+				--============================
+				-- GET FINALIZED-BIOME-VALUES
+				--============================
+				local FinalizedBiomeValues = SeemTerrainGen_1_Utils.GetFinalizedBiomeValues(
+					Biome,
+					FinalizedValues,
+					worldX, worldZ,
+					currentThreshold
+				)
 
-				local StrengthNoise = math.noise(worldX * BiomNoiseScale, worldZ * BiomNoiseScale, Seed) * BiomNoiseLength
-
-				local Threshold = currentThreshold + StrengthNoise + (0.5 * BiomNoiseLength)
-
-				-- noise is so easy if you think organic and use math in what you want(I wanted a Terrain Generator).
-				-- don't think that strict, just try 
-
-				-- here again we just check if we are in the correct area/borders/land.
-				if MaterialNoise <= Threshold and MaterialNoise >= LastThreshold then
+				--============================
+				-- CHECK IF WE ARE IN THE RIGHT BIOME
+				--============================
+				if MaterialNoise <= FinalizedBiomeValues.Threshold and MaterialNoise >= LastThreshold then
 					-- we have found the correct biome
-					--
+
+					--============================
+					-- SET THE BIOME-FALLBACKMATERIAL
+					--============================
 					PreservedMaterial = Biome.FallbackMaterial
 
-					for Range: string, MatList: SingleLayer in pairs(Biome.Layers) do
-						-- Instancing
+					--============================
+					-- FIND RANGE(LAYER) (LOOP THROUGH BIOME-LAYERS)
+					--============================
+					for Range: string, MatList: Types.SingleLayer in pairs(Biome.Layers) do
 
-						local StartNum = Range:match("^[%p%d]+")
-						local EndNum = Range:match("[%p%d]+$")
+						--============================
+						-- DEFINE START- AND END-NUM
+						--============================
+						local StartNumStr = Range:match("^[%p%d]+")
+						local EndNumStr = Range:match("[%p%d]+$")
+						local StartNum = tonumber(StartNumStr)
+						local EndNum = tonumber(EndNumStr)
 
-						StartNum = tonumber(StartNum) :: number
-						EndNum = tonumber(EndNum) :: number
+						if not StartNum or not EndNum then continue end
 
-						local LayerNoiseScale = Biome.LayerNoiseScale or 0.08
-						local LayerNoiseLength = Biome.LayerNoiseLength or 30
-						local LayerNoiseStrength = math.noise(worldX * LayerNoiseScale, worldZ * LayerNoiseScale, Seed) * LayerNoiseLength
-						local checkY = NewPosition.Y + LayerNoiseStrength + (0.5 * LayerNoiseLength) --+ (InnerMaterialsStrength * InnerMaterialsScale)
+						--============================
+						-- FIND RANGE(LAYER) (LOOP THROUGH RANGE)
+						--============================
+						for iIn, InnerMatList in ipairs(MatList.List) do
 
-						-- if you'd know how much time this checkY took me.
-						-- not because it was difficult, but because I coded too much and made mistakes, haha
-						if checkY >= StartNum and checkY <= EndNum then
-							-- we have found the correct layer(height material layer)
-							--
-							local InnerMaterialNoiseScale = MatList.InnerMaterialNoiseScale or 0.1
-							local InnerMaterialNoiseSeed = MatList.InnerMaterialNoiseSeed or 123
-							local InnerMaterialNoiseStrength = MatList.InnerMaterialNoiseStrength or 1
-							local InnerMaterialNoise = math.noise(worldX * InnerMaterialNoiseScale, worldZ * InnerMaterialNoiseScale, Seed + InnerMaterialNoiseSeed) * InnerMaterialNoiseStrength
-							InnerMaterialNoise = InnerMaterialNoise + (0.5 * InnerMaterialNoiseStrength)
-							InnerMaterialNoise = math.clamp(InnerMaterialNoise, 0, 1)
+							local FinalizedLayerValues = SeemTerrainGen_1_Utils.GetFinalizedLayerValues(
+								Biome,
+								FinalizedValues,
+								worldX, worldZ,
+								NewPosition
+							)
 
-							local LastInnerThreshold = 0
-							local CurrentInnerThreshold
-							for iIn, InnerMatList in ipairs(MatList.List) do
+							--============================
+							-- CHECK IF WE ARE IN THE CORRECT(ALLOWED) LAYER (HEIGHT)
+							--============================
+							if FinalizedLayerValues.checkY >= StartNum and FinalizedLayerValues.checkY <= EndNum then
+								-- we have found the correct layer(height material layer)
 
-								-- always waking up in a hospital, something sticked in your chest
-								-- and not being able to move, just staring at the ceiling.
+								--============================
+								-- GET FINALIZED-INNER-MATERIAL-VALUES
+								--============================
+								local FinalizedInnerMaterialValues = SeemTerrainGen_1_Utils.GetFinalizedInnerMaterialValues(
+									MatList,
+									FinalizedValues,
+									worldX, worldZ
+								)
 
-								local SameMaterialLevelNoiseScale = MatList.SameMaterialLevelNoiseScale or 0.8
-								local SameMaterialLevelNoiseLength = MatList.SameMaterialLevelNoiseLength or 1
-								local SameMaterialLevelNoiseSeed = MatList.SameMaterialLevelNoiseSeed or 2132
-								local SameMaterialLevelNoiseStrength = math.noise(worldX * SameMaterialLevelNoiseScale, worldZ * SameMaterialLevelNoiseScale, Seed + SameMaterialLevelNoiseSeed) * SameMaterialLevelNoiseLength
+								-- it's so strange being the different one, even when you have no idea.
+								-- a person always needing to watch you because you are "different".
 
-								CurrentInnerThreshold = InnerMatList.Threshold + (0.5 * SameMaterialLevelNoiseStrength)
+								--============================
+								-- DEFINE THRESHOLDS (LAST & CURRENT)
+								--============================
+								local LastInnerThreshold = 0
+								local CurrentInnerThreshold
 
+								--============================
+								-- GET FINALIZED SAME-MATERIAL-LEVEL-VALUES
+								--============================
+								local FinalizedSameMaterialLevelValues = SeemTerrainGen_1_Utils.GetFinalizedSameMaterialLevelValues(
+									MatList,
+									FinalizedValues,
+									worldX, worldZ
+								)
+
+								--============================
+								-- HANDLE CURRENT-INNER-THRESHOLD (FOR SPIKES)
+								--============================
+								CurrentInnerThreshold = InnerMatList.Threshold + (0.5 * FinalizedSameMaterialLevelValues.SameMaterialLevelNoiseStrength)
 								if iIn == #MatList.List then
 									CurrentInnerThreshold = 100 
 								end
 
-								-- same height level check
-								if InnerMaterialNoise <= CurrentInnerThreshold and InnerMaterialNoise >= LastInnerThreshold then
-									-- we have found the correct InnerMaterial
-									PreservedMaterial = InnerMatList.Material
+								--============================
+								-- CHECK IF WE ARE IN THE CORRECT INNER-MATERIAL (-AREA/NOISE)
+								--============================
+								if FinalizedInnerMaterialValues.InnerMaterialNoise <= CurrentInnerThreshold and FinalizedInnerMaterialValues.InnerMaterialNoise >= LastInnerThreshold then
+									-- we have found the correct inner-material (-area/noise)
 
-									-- Instancing
+									--============================
+									-- CHECK IF WE ARE IN THE RIGHT INNER-MATERIAL (-AREA/NOISE)
+									--============================
+									PreservedMaterial = InnerMatList.Material
+									
+									--============================
+									-- INSTANCING
+									--============================
 									if InnerMatList.Instancing then
 
+										--============================
+										-- DEFINE LAST-INST-THRESHOLD
+										--============================
 										local LastInstThreshold = 0
 
+										--============================
+										-- FIND INST (LOOP THROUGH InnerMatList.Instancing)
+										--============================
 										for iInstTbl, InstTbl in pairs(InnerMatList.Instancing) do
 
+											--============================
+											-- HANDLE INST-THRESHOLD (FOR SPIKES)
+											--============================
 											local InstThreshold = InstTbl.Threshold
-
 											if iInstTbl == #InnerMatList.Instancing then
 												InstThreshold = 100
 											end
 
-											-- InstancingNoise
-											if InnerMaterialNoise <= InstThreshold and InnerMaterialNoise >= LastInstThreshold then
-												-- we found the right Instance-Table
+											--============================
+											-- CHECK IF WE ARE IN THE CORRECT INST-AREA(THRESHOLD)
+											--============================
+											if FinalizedInnerMaterialValues.InnerMaterialNoise <= InstThreshold and FinalizedInnerMaterialValues.InnerMaterialNoise >= LastInstThreshold then
+												-- we found the correct Instance-Table
+												
+												--============================
+												-- GET SINGLE-INST-NOISE
+												--============================
+												local SingleInstNoise = SeemTerrainGen_1_Utils.GetSingleInstNoise(
+													FinalizedValues,
+													worldX, worldZ
+												)
 
-												local SingleInstNoise = math.noise(worldX * InstDistributionScale, worldZ * InstDistributionScale, Seed + InstDistributionSeed) * InstDistributionLength
-												SingleInstNoise = SingleInstNoise + (0.5 * InstDistributionLength)
-												SingleInstNoise = math.clamp(SingleInstNoise, 0, 1)
-
+												--============================
+												-- DECLARE LAST-SINGLE-INST-THRESHOLD
+												--============================
 												local LastSingleInstThreshold = 0
+												
+												--============================
+												-- FIND CORRECT SINGLE-INST-AREA(NOISE)
+												--============================
 												for iSingleInstTbl, SingleInstTbl in pairs(InstTbl.Instances) do
-													local SingleInstTblInst = SingleInstTbl.Instance
-													local SingleInstTblThreshold = SingleInstTbl.Threshold
+													
+													local FinalizedSingleInstTbl = SeemTerrainGen_1_Utils.GetFinalizedSingleInstTbl(SingleInstTbl)
 
 													if iSingleInstTbl == #InstTbl.Instances then
-														SingleInstTblThreshold = 100
+														FinalizedSingleInstTbl.Threshold = 100
 													end
 
-													if SingleInstNoise <= SingleInstTblThreshold and SingleInstNoise >= LastSingleInstThreshold then
-														local inst = SingleInstTblInst:Clone()
+													--============================
+													-- CHECK IF WE (SINGLE-INST-NOISE) ARE IN THE CORRECT AREA
+													--============================
+													if SingleInstNoise <= FinalizedSingleInstTbl.Threshold and SingleInstNoise >= LastSingleInstThreshold then
+														local inst = FinalizedSingleInstTbl.Instance:Clone()
 														-- we set the parent later, so we do everything on the ram first so we have way more performance.
 
-														local instNoise = math.noise(worldX * instNoiseScale, worldZ * instNoiseScale, Seed + instNoiseSeed) * instNoiseLength
+														--============================
+														-- GET INST-NOISE
+														--============================
+														local instNoise = SeemTerrainGen_1_Utils.GetInstNoise(
+															FinalizedValues,
+															worldX, worldZ
+														)
 
+														--============================
+														-- DECLARE INST-POSITION
+														--============================
 														local InstPos = NewPosition + Vector3.new(instNoise, 0, instNoise)
 
-														local raycastParams = RaycastParams.new()
-														raycastParams.FilterDescendantsInstances = {workspace.Terrain :: Instance}
-														raycastParams.FilterType = Enum.RaycastFilterType.Include -- Nur das hier beachten!
-														raycastParams.IgnoreWater = true
-
-														local rayOrigin = InstPos + Vector3.new(0, 500, 0)
-														local rayDirection = Vector3.new(0, -15000, 0)
-														local raycastResult = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+														--============================
+														-- START RAYCASTING FOR SLOPE, ETC.
+														--============================
+														local raycastResult = SeemTerrainGen_1_Utils.GetRaycastResult(InstPos)
 
 														if raycastResult then
-															local groundNormal = raycastResult.Normal
-															local upVector = Vector3.new(0, 1, 0)
-
-															local dot = groundNormal:Dot(upVector)
-
-															local slopeAngle = math.deg(math.acos(math.clamp(dot, -1, 1)))
-
-															if raycastResult.Position.Y > SingleInstTbl.MaxHeight then
-																-- exceeded
+															--============================
+															-- CHECK SLOPE
+															--============================
+															local SlopeExceeded = SeemTerrainGen_1_Utils.SlopeExceeded(raycastResult, FinalizedSingleInstTbl)
+															if SlopeExceeded == true then
 																inst:Destroy()
 																continue
 															end
 
-															if slopeAngle > SingleInstTbl.MaxSlope then
-																-- exceeded
+															--============================
+															-- CHECK HEIGHT
+															--============================
+															local HeightExceeded = SeemTerrainGen_1_Utils.HeightExceeded(raycastResult, FinalizedSingleInstTbl)
+															if HeightExceeded == true then
 																inst:Destroy()
 																continue
 															end
-
-															-- Iteration Data
-															-- Get Directory
+															
+															--============================
+															-- GET DIRECTORY TO PUT INSTANCE IN
+															--============================
 															local BiomeFolder = CurrentIterationTable[Biome.BiomeName] 
 															local RangeFolder = BiomeFolder[Range]
 															local MaterialFolder = RangeFolder[tostring(PreservedMaterial)]
 
-															-- Create Folder if not done so
-															local function CreateInstancesFolder()
-																if not MaterialFolder["Instances"] then
-																	MaterialFolder["Instances"] = {}
-																end
-															end
-															CreateInstancesFolder()
-															local InstancesFolder = MaterialFolder["Instances"] 
+															--============================
+															-- GET/CREATE INSTANCE FOLDER
+															--============================
+															local InstancesFolder = SeemTerrainGen_1_Utils.CreateInstancesFolder(MaterialFolder)
 															local TotalPropCount = #InstancesFolder
 
 															-- and then you are taken to the next step.
 															-- I also wanted to live a normal life. Are you living a normal life?
 
+															--============================
+															-- PUT INST IN INSTANCES-FOLDER
+															--============================
 															table.insert(InstancesFolder, inst)
-															inst.Name = SingleInstTblInst.Name.."_"..TotalPropCount
+															inst.Name = FinalizedSingleInstTbl.Instance.Name.."_"..TotalPropCount
 
-															if inst:IsA("Model") then
-
-																local randomScale = math.random(SingleInstTbl.MinRandomScale * 100, SingleInstTbl.MaxRandomScale * 100) / 100
-
-																local randomRot = CFrame.Angles(
-																	math.rad(math.random(SingleInstTbl.MinRandomRotations.x, SingleInstTbl.MaxRandomRotations.x)),
-																	math.rad(math.random(SingleInstTbl.MinRandomRotations.y, SingleInstTbl.MaxRandomRotations.y)),
-																	math.rad(math.random(SingleInstTbl.MinRandomRotations.z, SingleInstTbl.MaxRandomRotations.z))
-																)
-
-																local finalPos = raycastResult.Position + Vector3.new(0, (SingleInstTbl.Offset or 0), 0)
-																local baseCFrame
-
-																if SingleInstTbl.FaceNormal then
-																	baseCFrame = CFrame.lookAt(finalPos, finalPos + raycastResult.Normal) 
-																		* CFrame.Angles(math.rad(-90), 0, 0)
-																else 
-																	baseCFrame = CFrame.new(finalPos)
-																end
-
-																local finalCFrame = baseCFrame * randomRot
-
-																inst:PivotTo(finalCFrame)
-																inst:ScaleTo(randomScale)
-
-															elseif inst:IsA("BasePart") then
-
-																local randomScale = math.random(SingleInstTbl.MinRandomScale * 100, SingleInstTbl.MaxRandomScale * 100) / 100
-
-																local rotMin = SingleInstTbl.MinRandomRotations or {x=0, y=0, z=0}
-																local rotMax = SingleInstTbl.MaxRandomRotations or {x=0, y=0, z=0}
-
-																local randomRot = CFrame.Angles(
-																	math.rad(math.random(rotMin.x, rotMax.x)),
-																	math.rad(math.random(rotMin.y, rotMax.y)),
-																	math.rad(math.random(rotMin.z, rotMax.z))
-																)
-
-																if SingleInstTbl.FaceNormal then
-																	local finalPos = raycastResult.Position + Vector3.new(0, (SingleInstTbl.Offset or 0), 0)
-
-																	local finalCFrame = CFrame.lookAt(finalPos, finalPos + raycastResult.Normal) 
-																		* CFrame.Angles(-math.rad(90), 0, 0) 
-																		* randomRot
-																	inst.CFrame = finalCFrame
-
-																else 
-																	local finalPos = raycastResult.Position + Vector3.new(0, (SingleInstTbl.Offset or 0), 0)
-																	local finalCFrame = CFrame.new(finalPos) * randomRot
-																	inst.CFrame = finalCFrame
-																end
-
-																inst.Size = inst.Size * randomScale
-
-															end
-
-															LastInstPosition = raycastResult.Position + Vector3.new(0, (SingleInstTbl.Offset or 0), 0)
+															--============================
+															-- HANDLE INSTANCE (CLASS-CHECK, POSITIONING, ETC.)
+															--============================
+															SeemTerrainGen_1_Utils.HandleInstance(raycastResult, FinalizedSingleInstTbl, inst)
+															
+															--============================
+															-- UPDATE LAST-INST-POSITION
+															--============================
+															LastInstPosition = raycastResult.Position + Vector3.new(0, (FinalizedSingleInstTbl.Offset or 0), 0)
 														end
 
+														--============================
+														-- BREAK TO SAVE PERFORMANCE (no unecessary loops)
+														--============================
 														break	
 													end
 
-													LastSingleInstThreshold = SingleInstTblThreshold
+													--============================
+													-- UPDATE LAST-SINGLE-INST-THRESHOLD
+													--============================
+													LastSingleInstThreshold = FinalizedSingleInstTbl.Threshold
 												end
 
+												--============================
+												-- BREAK TO SAVE PERFORMANCE (no unecessary loops)
+												--============================
 												break
 											end
-
+											
+											--============================
+											-- UPDATE LAST-INST-THRESHOLD
+											--============================
 											LastInstThreshold = InstThreshold
 										end
 									end
-
-									break
 								end	
 
+								--============================
+								-- UPDATE LAST-INNTER-THRESHOLD
+								--============================
 								LastInnerThreshold = CurrentInnerThreshold
 							end
-
-							break
 						end
+
 					end
 
+					--============================
+					-- BREAK TO SAVE PERFORMANCE (No unnecessary loops)
+					--============================
 					break
 				end
 
-				LastThreshold = Threshold
+				--============================
+				-- UPDATE LAST-THRESHOLD
+				--============================
+				LastThreshold = FinalizedBiomeValues.Threshold
 			end
 
-			if BatchingEnabled then
-				if (os.clock() - startTime) >= BatchTime then
-					task.wait(BatchWait)
+			--============================
+			-- HANDLE BATCHING
+			--============================
+			if FinalizedValues.BatchingEnabled then
+				if (os.clock() - startTime) >= FinalizedValues.BatchTime then
+					task.wait(FinalizedValues.BatchWait)
 
 					startTime = os.clock()
 				end
 			end
 		end
 
-		if BatchingEnabled then
-			task.wait(WaitDuration)
+		--============================
+		-- HANDLE BATCHING
+		--============================
+		if FinalizedValues.BatchingEnabled then
+			task.wait(FinalizedValues.WaitDuration)
 		end
-
 	end
 
-	SeemTerrainGen1.PropGenerationEnabled = true -- automatically enable(so we dont need another function to resume generation)
+	--============================
+	-- "RESET" PROCESSOR TO TRUE
+	--============================
+	Processor.EnablePropGeneration() -- automatically enable(so we dont need another function to resume generation)
 end
 
 -- is just batching, idk why I called it chunking
 function SeemTerrainGen1.ClearProps(
-	ChunkConfig: ChunkConfigType
+	ChunkConfig: Types.ChunkConfigType
 )
 	local ChunkSize = ChunkConfig.ChunkSize -- studs
 	local ChunkLoadingTime = ChunkConfig.ChunkLoadingTime
