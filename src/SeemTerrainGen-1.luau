@@ -6,7 +6,7 @@ LICENSE file in the root directory of this source tree.
  
 ---
 Socials(I'd love to meet you!)
-Discord: https://discord.gg/fZPqkdyqD (Latest link always on youtube, tiktok and github)
+Discord: (Latest link always on youtube, tiktok and github)
 Youtube: https://www.youtube.com/@Seem-dev
 TikTok: https://www.tiktok.com/@seem44014
 ]]
