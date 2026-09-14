@@ -1,14 +1,47 @@
 --[[
-Copyright (c) 2026 Seem
+      ___           ___           ___           ___     
+     /\  \         /\  \         /\  \         /\__\    
+    /::\  \       /::\  \       /::\  \       /::|  |   
+   /:/\ \  \     /:/\:\  \     /:/\:\  \     /:|:|  |   
+  _\:\~\ \  \   /::\~\:\  \   /::\~\:\  \   /:/|:|__|__ 
+ /\ \:\ \ \__\ /:/\:\ \:\__\ /:/\:\ \:\__\ /:/ |::::\__\
+ \:\ \:\ \/__/ \:\~\:\ \/__/ \:\~\:\ \/__/ \/__/~~/:/  /
+  \:\ \:\__\    \:\ \:\__\    \:\ \:\__\         /:/  / 
+   \:\/:/  /     \:\ \/__/     \:\ \/__/        /:/  /  
+    \::/  /       \:\__\        \:\__\         /:/  /   
+     \/__/         \/__/         \/__/         \/__/    
+]]
 
-This source code is licensed under the MIT license found in the
-LICENSE file in the root directory of this source tree.
- 
----
-Socials(I'd love to meet you!)
-Discord: https://discord.gg/fZPqkdyqD (Latest link always on youtube, tiktok and github)
-Youtube: https://www.youtube.com/@Seem-dev
-TikTok: https://www.tiktok.com/@seem44014
+--[[
+    TableLib v1.0
+    Author: Seem
+    Published: 2025
+    Description: A Lua utility library for shallow and deep table operations.
+                 Provides copying, merging, searching, counting, and debugging helpers.
+
+    License: MIT License
+
+    MIT License
+
+    Copyright (c) 2025 Seem
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
 ]]
 
 --[[
@@ -257,6 +290,7 @@ local function ShallowValueSearch(givenTable, Value)
 end
 
 local function DeepValueSearch(givenTable, Value)
+	
 	local function func(tbl, val)
 		for i, v in pairs(tbl) do
 			if typeof(v) == "table" then
@@ -264,7 +298,7 @@ local function DeepValueSearch(givenTable, Value)
 				if foundKey ~= nil then
 					return foundKey
 				end
-			else 
+			else 				
 				if v == val then
 					return i
 				end
@@ -285,20 +319,24 @@ local function ShallowKeySearch(givenTable, Key)
 	return nil
 end
 
+local parentValue
 local function DeepKeySearch(givenTable, Key)
+	
 	for i, v in pairs(givenTable) do
 		if i == Key then
-			return v 
+			return v, parentValue
 		end
 		if typeof(v) == "table" then
 			local found = DeepKeySearch(v, Key)
 			if found then
-				return found
+				return found, parentValue
 			end
 		end
+		
+		parentValue = v
 	end
 
-	return nil
+	return nil, parentValue
 end
 
 local function ShallowGetValueOrKey(givenTable, Key, Value)
@@ -510,37 +548,80 @@ end
 ]]
 local function deepCompare(tab1, tab2)
 
+    --[[ 
+        STEP 1: Identity & Direct Check
+        If tab1 and tab2 point to the exact same memory address (or are identical 
+        primitive values like the same number or string), they are guaranteed 
+        to be equal. We can return 'true' immediately.
+    ]]
 	if tab1 == tab2 then 
 		return true 
 	end
 
+    --[[
+        STEP 2: Data Type Check
+        Since the '==' check above failed, we know they are not identical.
+        If either of the two values is NOT a table, they cannot possibly be equal 
+        (e.g., tab1 is a table, but tab2 is a number or 'nil').
+    ]]
 	if type(tab1) ~= "table" or type(tab2) ~= "table" then 
 		return false 
 	end
 
+    --[[
+        STEP 3: Content Loop (tab1 -> tab2)
+        We loop through every single entry (key and value) inside tab1.
+        At the same time, we fetch the corresponding value from tab2 using the same key.
+    ]]
 	for key, value1 in pairs(tab1) do
 		local value2 = tab2[key]
 
+        --[[
+            STEP 3A: The Recursive Case (Nesting)
+            If the current value in tab1 is a table AND the corresponding value 
+            in tab2 is also a table, we have encountered a sub-table.
+            
+            This is where the magic happens (Recursion): The function calls ITSELF 
+            to validate this sub-table. If this deeper check returns 'false', 
+            we stop everything and return 'false'.
+        ]]
 		if type(value1) == "table" and type(value2) == "table" then
 			if not deepCompare(value1, value2) then 
 				return false 
 			end
 
+        --[[
+            STEP 3B: Normal Value Comparison
+            If they are not sub-tables, we compare the values directly (e.g., strings or numbers).
+            The moment a mismatch is found, the function immediately exits with 'false'.
+        ]]
 		elseif value1 ~= value2 then
 			return false
 		end
 	end
 
+    --[[
+        STEP 4: Symmetry Check (tab2 -> tab1)
+        Up to this point, we know that everything inside tab1 exists identically in tab2.
+        But what if tab2 has MORE entries than tab1? (e.g., tab1 has 2 items, tab2 has 3).
+        Here we check if there are any keys in tab2 that do not exist at all (are nil) in tab1.
+    ]]
 	for key in pairs(tab2) do
 		if tab1[key] == nil then 
 			return false 
 		end
 	end
 
+    --[[
+        STEP 5: Success!
+        If the code managed to get through the entire function without ever 
+        triggering a 'return false', both tables are structurally and content-wise 
+        perfectly identical.
+    ]]
 	return true
 end
 
--- SeemTerrain
+-- LandAlg - SeemTerrain
 
 function TableLib.DynamicWeights(DefaultWeights: {number}, pushedWeightIndex: number, pushedWeightValue: number): {number}
 	local unnormalizedWeights = {}
@@ -737,7 +818,8 @@ end
     Returns the associated value or nil.
 ]]
 function TableLib.DeepKeySearch(givenTable, Key)
-	return DeepKeySearch(givenTable, Key)
+	local value, ParentValue = DeepKeySearch(givenTable, Key)
+	return value, ParentValue
 end
 
 
