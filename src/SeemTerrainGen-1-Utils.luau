@@ -1,19 +1,6 @@
 --!strict
 
 --[[
-Copyright (c) 2026 Seem
-
-This source code is licensed under the MIT license found in the
-LICENSE file in the root directory of this source tree.
- 
----
-Socials(I'd love to meet you!)
-Discord: (Latest link always on youtube, tiktok and github)
-Youtube: https://www.youtube.com/@Seem-dev
-TikTok: https://www.tiktok.com/@seem44014
-]]
-
---[[
 This module is used to make scripts more organized by putting functions here.
 It just looks cleaner in the MainScript (SeemTerrainGen-1) and make changes/updates easier.
 ]]
@@ -66,7 +53,7 @@ end
 -- These are the fallback/default Materials that are used in SeemTerrainGen_1_Utils.GetValues
 local STG_1_Settings: Types.STG_1_Settings = { -- DeadMountainIsland Map
 	BallRadius = 5,
-	CenterPosition = GetBottomLeftPositionOfPart(workspace.Baseplate),
+	CenterPosition = Vector3.new(-512, 7, -512),
 	Size = Vector3.new(1024, 0, 1024),
 	Seed = 2934,
 
