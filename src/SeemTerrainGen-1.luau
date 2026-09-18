@@ -6,7 +6,7 @@ LICENSE file in the root directory of this source tree.
  
 ---
 Socials(I'd love to meet you!)
-Discord: (Latest link always on youtube, tiktok and github)
+Discord: https://discord.gg/fZPqkdyqD (Latest link always on youtube, tiktok and github)
 Youtube: https://www.youtube.com/@Seem-dev
 TikTok: https://www.tiktok.com/@seem44014
 ]]
@@ -405,7 +405,13 @@ function SeemTerrainGen1.CreateFolders()
 		end
 	end
 	
-	RefreshTempFolder()
+	--RefreshTempFolder()
+	
+	local function CreateFolder()
+		local NewFolder = Instance.new("Folder")
+		NewFolder.Parent = SeemTerrainTemp
+
+	end
 	
 	if typeof(CurrentIterationTable) == "table" then
 		TableLib.ConvertToFolders(CurrentIterationTable, SeemTerrainTemp, 0.02)
@@ -427,8 +433,7 @@ end
 
 function SeemTerrainGen1.GenerateProps(
 	Materials: Types.MaterialsList
-)
-	
+)	
 	--============================
 	-- IMPORTANT VARIABLES and FALLBACKS
 	--============================
@@ -448,6 +453,9 @@ function SeemTerrainGen1.GenerateProps(
 	local halfX, halfZ = FinalizedValues.Size.X / 2, FinalizedValues.Size.Z / 2
 	local midX = FinalizedValues.CenterPosition.X + halfX
 	local midZ = FinalizedValues.CenterPosition.Z + halfZ
+
+	-- everything is stored in this table. Just look it up(ctrl + F)
+	local IterationTable: {[any]: any} = {}
 
 	local MaterialNoise = 0
 
@@ -559,6 +567,12 @@ function SeemTerrainGen1.GenerateProps(
 			-- FIND BIOME (LOOP THROUGH BIOME)
 			--============================
 			for i, Biome in ipairs(Materials.MaterialsList) do
+
+				--============================
+				-- CREATE BIOME FOLDER
+				--============================
+				local CurrentBiomeTable = SeemTerrainGen_1_Utils.CreateDataBiomeFolder(IterationTable, Biome)
+
 				-- ..  .... .- - .  -.-. .- -. -.-. . .-. .-.-.-
 
 				--============================
@@ -594,6 +608,8 @@ function SeemTerrainGen1.GenerateProps(
 					-- FIND RANGE(LAYER) (LOOP THROUGH BIOME-LAYERS)
 					--============================
 					for Range: string, MatList: Types.SingleLayer in pairs(Biome.Layers) do
+
+						local CurrentRangeTable = SeemTerrainGen_1_Utils.CreateDataRangeFolder(IterationTable, CurrentBiomeTable, Range)
 
 						--============================
 						-- DEFINE START- AND END-NUM
@@ -697,7 +713,7 @@ function SeemTerrainGen1.GenerateProps(
 											--============================
 											if FinalizedInnerMaterialValues.InnerMaterialNoise <= InstThreshold and FinalizedInnerMaterialValues.InnerMaterialNoise >= LastInstThreshold then
 												-- we found the correct Instance-Table
-												
+
 												--============================
 												-- GET SINGLE-INST-NOISE
 												--============================
@@ -710,12 +726,12 @@ function SeemTerrainGen1.GenerateProps(
 												-- DECLARE LAST-SINGLE-INST-THRESHOLD
 												--============================
 												local LastSingleInstThreshold = 0
-												
+
 												--============================
 												-- FIND CORRECT SINGLE-INST-AREA(NOISE)
 												--============================
 												for iSingleInstTbl, SingleInstTbl in pairs(InstTbl.Instances) do
-													
+
 													local FinalizedSingleInstTbl = SeemTerrainGen_1_Utils.GetFinalizedSingleInstTbl(SingleInstTbl)
 
 													if iSingleInstTbl == #InstTbl.Instances then
@@ -765,11 +781,11 @@ function SeemTerrainGen1.GenerateProps(
 																inst:Destroy()
 																continue
 															end
-															
+
 															--============================
 															-- GET DIRECTORY TO PUT INSTANCE IN
 															--============================
-															local BiomeFolder = CurrentIterationTable[Biome.BiomeName] 
+															local BiomeFolder = IterationTable[Biome.BiomeName] 
 															local RangeFolder = BiomeFolder[Range]
 															local MaterialFolder = RangeFolder[tostring(PreservedMaterial)]
 
@@ -792,7 +808,7 @@ function SeemTerrainGen1.GenerateProps(
 															-- HANDLE INSTANCE (CLASS-CHECK, POSITIONING, ETC.)
 															--============================
 															SeemTerrainGen_1_Utils.HandleInstance(raycastResult, FinalizedSingleInstTbl, inst)
-															
+
 															--============================
 															-- UPDATE LAST-INST-POSITION
 															--============================
@@ -816,13 +832,32 @@ function SeemTerrainGen1.GenerateProps(
 												--============================
 												break
 											end
-											
+
 											--============================
 											-- UPDATE LAST-INST-THRESHOLD
 											--============================
 											LastInstThreshold = InstThreshold
 										end
 									end
+
+									--============================
+									-- DEFINE DEEP-DATA
+									--============================
+									if not InnerMatList._Positions then
+										InnerMatList._Positions = {{pos = NewPosition, mat = InnerMatList.Material}}
+									else 
+										table.insert(InnerMatList._Positions :: {{ mat: Enum.Material, pos: Vector3 }}, {pos = NewPosition, mat = InnerMatList.Material})
+									end
+
+									--============================
+									-- CREATE DATA-MATERIAL-FOLDER
+									--============================
+									local CurrentMaterialFolder = SeemTerrainGen_1_Utils.CreateDataMaterialFolder(
+										CurrentRangeTable,
+										PreservedMaterial
+									)
+
+									break
 								end	
 
 								--============================
@@ -866,6 +901,8 @@ function SeemTerrainGen1.GenerateProps(
 		end
 	end
 
+	CurrentIterationTable = IterationTable
+
 	--============================
 	-- "RESET" PROCESSOR TO TRUE
 	--============================
@@ -900,3 +937,5 @@ return SeemTerrainGen1
 -- I would say the actual therapy is happening years after. 0.3% (in germany), imagine... why me?
 
 -- I hope you like SeemTerrainGen-1, there may be an unnecessary loop, but idk, I don't want to touch the code before it breaks again.
+
+
