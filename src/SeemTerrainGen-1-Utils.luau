@@ -417,7 +417,7 @@ function SeemTerrainGen_1_Utils.GetFinalizedSingleInstTbl(
 	Values.MinRandomRotations = SingleInstTbl.MinRandomRotations or STG_1_Settings.MinRandomRotations
 	Values.MaxRandomRotations = SingleInstTbl.MaxRandomRotations or STG_1_Settings.MaxRandomRotations
 	Values.MinRandomScale = SingleInstTbl.MinRandomScale or STG_1_Settings.MinRandomScale
-	Values.MaxRandomScale = SingleInstTbl.Threshold or STG_1_Settings.MaxRandomScale
+	Values.MaxRandomScale = SingleInstTbl.MaxRandomScale or STG_1_Settings.MaxRandomScale
 	
 	return Values
 end
@@ -611,7 +611,7 @@ Creates a Instances-Folder if not created already (no dups) and returns it.
 ]]
 function SeemTerrainGen_1_Utils.CreateInstancesFolder(
 	MaterialFolder: {}
-)
+): {Instance}
 	if not MaterialFolder["Instances"] then
 		MaterialFolder["Instances"] = {}
 	end
