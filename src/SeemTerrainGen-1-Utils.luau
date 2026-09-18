@@ -861,7 +861,6 @@ function SeemTerrainGen_1_Utils.HandleInstance(
 		end
 
 		inst.Size = inst.Size * randomScale
-
 	end
 end
 
