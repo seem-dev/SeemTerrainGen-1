@@ -4,7 +4,8 @@ SeemTerrainGen-1: Roblox Studio World-Nature-Generator (Voxel Terrain + Props). 
 **Made by Seem for devs.**
 
 I'd love to see you on the discord, join us!
-Discord: https://discord.gg/fZPqkdyqD
+[Discord: https://discord.gg/fZPqkdyqD](https://discord.gg/beGdWAsud
+)
 
 I am already working on the next open source Project: UI Framework! Help me build it!
 
