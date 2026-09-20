@@ -1,3 +1,6 @@
+<img width="1280" height="720" alt="Thumbnail" src="https://github.com/user-attachments/assets/9e277901-2047-4711-acbb-192a3b065cbb" />
+
+
 # The Plains Factory - SeemTerrainGen-1 Map-Config
 Hello everyone! Following the [tutorial](https://youtu.be/vJIZr__O41A), I have uploaded the finished configs so you can view and use them.
 
