@@ -164,7 +164,7 @@ function SeemTerrainGen1.GenerateTerrain(
 		)
 
 		if ExtensionConfig then
-			warn("config returned!")
+			--warn("config returned!")
 			ConfiguredConfig = ExtensionConfig
 		end
 
@@ -628,7 +628,7 @@ function SeemTerrainGen1.GenerateTerrain(
 		)
 	end
 	
-	warn("[SUCCESS] Generated Map")
+	--warn("[SUCCESS] Generated Map")
 end
 
 -- LoadProps
@@ -663,10 +663,10 @@ function SeemTerrainGen1.CreateFolders(Materials: Types.MaterialsList)
 			end
 		end
 
-		warn("Successfully loaded Props.")
+		--warn("Successfully loaded Props.")
 	end
 	
-	warn("success from stg1fast create folders.")
+	--warn("success from stg1fast create folders.")
 end
 
 function SeemTerrainGen1.GenerateProps(
@@ -678,12 +678,12 @@ function SeemTerrainGen1.GenerateProps(
 	local startTime = os.clock() -- for batching.
 	local LastInstPosition: Vector3 -- for Instance
 	
-	warn("CALLED GENERATE PROPS")
-	warn(tostring(Materials.InstIgnoreWater))
+	--warn("CALLED GENERATE PROPS")
+	--warn(tostring(Materials.InstIgnoreWater))
 
 	local FinalizedValues = SeemTerrainGen_1_Utils.GetFinalizedValues(Materials) -- gets the finalized values (fallback-checks, etc.)
-	warn("---")
-	warn(tostring(Materials.InstIgnoreWater))
+	--warn("---")
+	--warn(tostring(Materials.InstIgnoreWater))
 	--============================
 	-- SETUP SeemTerrainGen_1_Utils WITH FINALIZED-VALUES
 	--============================
