@@ -66,7 +66,7 @@ local IslandCreator: types.Extension = {
 			MapConfig.InstDistributionSeed = 242143
 			MapConfig.InstDistributionLength = 1
 
-			MapConfig.InstancingSteps = 5
+			MapConfig.InstancingSteps = 50
 			MapConfig.InstancingSeed = 9923
 
 			MapConfig.instNoiseScale = 0.8
