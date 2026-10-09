@@ -531,7 +531,8 @@ function SeemTerrainGen1.GenerateTerrain(
 							{
 								MaterialList = FinalizedValues,
 								Position = NewPosition,
-								Material = PreservedMaterial
+								Material = PreservedMaterial,
+								BallRadius = FinalizedValues.BallRadius
 							}
 						)
 					end
@@ -631,7 +632,7 @@ function SeemTerrainGen1.GenerateTerrain(
 end
 
 -- LoadProps
-function SeemTerrainGen1.CreateFolders()
+function SeemTerrainGen1.CreateFolders(Materials: Types.MaterialsList)
 	local SeemTerrainTemp = workspace.SeemTerrain.Temp -- get the latest always
 
 	local function RefreshTempFolder()
@@ -664,6 +665,8 @@ function SeemTerrainGen1.CreateFolders()
 
 		warn("Successfully loaded Props.")
 	end
+	
+	warn("success from stg1fast create folders.")
 end
 
 function SeemTerrainGen1.GenerateProps(
@@ -674,9 +677,13 @@ function SeemTerrainGen1.GenerateProps(
 	--============================
 	local startTime = os.clock() -- for batching.
 	local LastInstPosition: Vector3 -- for Instance
+	
+	warn("CALLED GENERATE PROPS")
+	warn(tostring(Materials.InstIgnoreWater))
 
 	local FinalizedValues = SeemTerrainGen_1_Utils.GetFinalizedValues(Materials) -- gets the finalized values (fallback-checks, etc.)
-
+	warn("---")
+	warn(tostring(Materials.InstIgnoreWater))
 	--============================
 	-- SETUP SeemTerrainGen_1_Utils WITH FINALIZED-VALUES
 	--============================
@@ -1013,9 +1020,17 @@ function SeemTerrainGen1.GenerateProps(
 														--============================
 														-- START RAYCASTING FOR SLOPE, ETC.
 														--============================
+													
 														local raycastResult = SeemTerrainGen_1_Utils.GetRaycastResult(InstPos)
 
 														if raycastResult then
+															--============================
+															-- CHECK IGNORE WATER
+															--============================
+															if raycastResult.Material == Enum.Material.Water and FinalizedValues.InstIgnoreWater then
+																continue
+															end
+															
 															--============================
 															-- CHECK SLOPE
 															--============================
