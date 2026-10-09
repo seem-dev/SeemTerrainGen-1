@@ -31,8 +31,6 @@ local SeaLevelExt: types.Extension = {
 	
 	PostProcessFunction = function(params)
 		
-		
-		
 		local PostProcessType = params.PostProcessType
 		local MapConfig = params.Config
 		
@@ -50,10 +48,7 @@ local SeaLevelExt: types.Extension = {
 			local MidPos = Pos + Vector3.new(halfX, 0, halfZ)
 			
 			local ConfiguredSize = Size + ExtraWater + WaterThickness
-
-			warn("called sealevel")
-			warn(ConfiguredSize)
-			warn(MidPos)
+			
 			terrain:FillBlock(CFrame.new(MidPos), ConfiguredSize, Enum.Material.Water)
 		else
 			local TypeCheckedConfig = MapConfig :: {types.MaterialsList}
