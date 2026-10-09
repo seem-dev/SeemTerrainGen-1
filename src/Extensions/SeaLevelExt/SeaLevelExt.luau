@@ -30,26 +30,31 @@ local SeaLevelExt: types.Extension = {
 	end,
 	
 	PostProcessFunction = function(params)
+		
+		
+		
 		local PostProcessType = params.PostProcessType
 		local MapConfig = params.Config
 		
 		if PostProcessType == "single" then
 			local TypeCheckedConfig = MapConfig :: types.MaterialsList
-			
+
 			local Pos = TypeCheckedConfig.CenterPosition
-			local Size = Vector3.new(TypeCheckedConfig.Size.X, 0, TypeCheckedConfig.Size.Z)
+			local Size = TypeCheckedConfig.Size
+			local ExtraWater = Vector3.new(config.ExtraWater, 0, config.ExtraWater)
+			local WaterThickness = Vector3.new(0, config.Thickness, 0)
 			
-			local SeaLevel = Vector3.new(0, config.SeaLevel,0 )
+			local halfX = Size.X / 2
+			local halfZ = Size.Z / 2
 			
-			local min = Pos
-			local max = Pos + Size + SeaLevel
+			local MidPos = Pos + Vector3.new(halfX, 0, halfZ)
 			
-			local r3 = Region3.new(
-				min,
-				max
-			):ExpandToGrid(resolution)
-			
-			terrain:FillRegion(r3, resolution, Enum.Material.Water)
+			local ConfiguredSize = Size + ExtraWater + WaterThickness
+
+			warn("called sealevel")
+			warn(ConfiguredSize)
+			warn(MidPos)
+			terrain:FillBlock(CFrame.new(MidPos), ConfiguredSize, Enum.Material.Water)
 		else
 			local TypeCheckedConfig = MapConfig :: {types.MaterialsList}
 
@@ -79,7 +84,7 @@ local SeaLevelExt: types.Extension = {
 				(minY + maxY) / 2, 
 				(minZ + maxZ) / 2
 			)
-			
+
 			terrain:FillBlock(CFrame.new(centerPosition), size, Enum.Material.Water)
 		end
 	end,
