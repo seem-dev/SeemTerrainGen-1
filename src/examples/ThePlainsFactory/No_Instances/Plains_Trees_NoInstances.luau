@@ -27,16 +27,20 @@ end
 -- maybe check again if they are true ones.
 
 local MaterialList: MaterialsList = {
-	
+
 	extensions = {
 		FastGen = {
-			chunks = 7
+			chunks = 20
+		},
+		
+		CustomExtensions = {
+			"SeaLevelExt"
 		}
 	},
 
 	BallRadius = 5,
 	CenterPosition = GetBottomLeftPositionOfPart(workspace.Baseplate),
-	Size = Vector3.new(2048, 0, 2048),
+	Size = Vector3.new(512, 0, 512),
 	Seed = 2934,
 
 	InstDistributionScale = 0.8,
