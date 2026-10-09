@@ -29,17 +29,19 @@ local MountainFiller: types.Extension = {
 		local distance = math.abs(params.Position.Y - config.FillToY)
 		
 		local steps = config.Steps -- positive
+		local offset = Vector3.new(0, params.BallRadius, 0) -- for smoothness
 		
 		if params.Position.Y > config.FillToY then
 			-- reverse the values
 			steps = -config.Steps
 			start = distance
 			distance = 1
+			offset = -offset
 		elseif params.Position.Y == config.FillToY then
 			return -- return because we don't need to do any more terrain as we are on the same level.
 		end
 		
-		local LastPos = params.Position
+		local LastPos = params.Position + Vector3.new(0, -20, 0) 
 		for i = start, distance, steps do
 			local pos = LastPos + Vector3.new(0, steps, 0)
 			
